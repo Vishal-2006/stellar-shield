@@ -1,13 +1,17 @@
 'use client';
 
 import React, { useState } from 'react';
+// Import matching stellar helper methods we created
+import { connectWallet, submitAuditToRegistry } from './stellar';
 
 export default function Home() {
   const [contractCode, setContractCode] = useState('');
   const [developerAddress, setDeveloperAddress] = useState('');
   const [loading, setLoading] = useState(false);
+  const [txLoading, setTxLoading] = useState(false);
   const [auditResult, setAuditResult] = useState<any>(null);
   const [error, setError] = useState('');
+  const [txSuccess, setTxSuccess] = useState('');
 
   const handleRunAudit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,26 +21,21 @@ export default function Home() {
     }
 
     setError('');
-    setLoading(True);
+    setTxSuccess('');
+    setLoading(true);
     setAuditResult(null);
 
-    Try {
-      // Connecting to our live running Python FastAPI Backend port endpoint
+    try {
       const response = await fetch('http://localhost:8000/api/audit', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contract_code: contractCode,
           developer_address: developerAddress,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to communicate with the auditing server backend.');
-      }
-
+      if (!response.ok) throw new Error('Failed to communicate with the auditing server.');
       const data = await response.json();
       setAuditResult(data);
     } catch (err: any) {
@@ -46,11 +45,41 @@ export default function Home() {
     }
   };
 
-  Return (
+  // Function to trigger Freighter Wallet signature and submit to Stellar Testnet
+  const handleRegisterOnChain = async () => {
+    if (!auditResult) return;
+    
+    setError('');
+    setTxSuccess('');
+    setTxLoading(true);
+
+    try {
+      // 1. Double check wallet connection and active account matches input
+      const activeAddress = await connectWallet();
+      if (activeAddress.toLowerCase() !== developerAddress.toLowerCase()) {
+        throw new Error(`Connected wallet address (${activeAddress.slice(0,6)}...) does not match the Developer Address input.`);
+      }
+
+      // 2. Broadcast and execute Soroban smart contract invoke sequence
+      const txResult = await submitAuditToRegistry(
+        developerAddress,
+        auditResult.contract_hash,
+        auditResult.security_score,
+        auditResult.critical_bugs
+      );
+
+      setTxSuccess(`Audit record successfully anchored on Stellar Testnet! Transaction Status: ${txResult.status}`);
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign or broadcast the on-chain ledger record.');
+    } finally {
+      setTxLoading(false);
+    }
+  };
+
+  return (
     <main className="min-h-screen bg-slate-900 text-slate-100 p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
         
-        {/* Header Block */}
         <header className="border-b border-slate-800 pb-4 text-center md:text-left">
           <h1 className="text-3xl font-extrabold text-indigo-400 tracking-tight">StellarShield 🛡️</h1>
           <p className="text-slate-400 text-sm mt-1">AI-Powered Soroban Smart Contract Vulnerability Auditor & Registry</p>
@@ -58,7 +87,7 @@ export default function Home() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           
-          {/* Input Panel Component */}
+          {/* Input Panel */}
           <section className="bg-slate-800/50 p-5 rounded-xl border border-slate-800 space-y-4 shadow-xl">
             <h2 className="text-lg font-semibold text-slate-200">Analysis Console</h2>
             <form onSubmit={handleRunAudit} className="space-y-4">
@@ -85,23 +114,14 @@ export default function Home() {
               </div>
 
               {error && <p className="text-xs font-semibold text-rose-400 bg-rose-500/10 p-2 rounded border border-rose-500/20">{error}</p>}
+              {txSuccess && <p className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 p-2 rounded border border-emerald-500/20">{txSuccess}</p>}
 
               <button
                 type="submit"
-                disabled={loading}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-medium py-2.5 rounded-lg text-sm tracking-wide shadow-lg transition-all duration-200"
+                disabled={loading || txLoading}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white font-medium py-2.5 rounded-lg text-sm tracking-wide shadow-lg transition-all"
               >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Executing AI Analysis Rules...
-                  </span>
-                ) : (
-                  'Run Security Scan'
-                )}
+                {loading ? 'Executing AI Analysis Rules...' : 'Run Security Scan'}
               </button>
             </form>
           </section>
@@ -112,7 +132,7 @@ export default function Home() {
             
             {!auditResult && !loading && (
               <div className="flex-1 flex flex-col items-center justify-center text-center p-6 border border-dashed border-slate-800 rounded-lg bg-slate-950/20">
-                <p className="text-slate-500 text-sm">Paste your target smart contract source code execution payload and click scan to compile security intelligence reports.</p>
+                <p className="text-slate-500 text-sm">Paste your target smart contract source code and click scan to compile security intelligence reports.</p>
               </div>
             )}
 
@@ -140,19 +160,4 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="flex-1 bg-slate-950 p-3 rounded-lg border border-slate-800 font-mono text-xs overflow-y-auto max-h-[300px] whitespace-pre-wrap text-slate-300 scrollbar-thin">
-                  {auditResult.report_markdown}
-                </div>
-
-                <button className="w-full border border-indigo-500/30 hover:border-indigo-400 bg-indigo-500/10 text-indigo-400 hover:text-indigo-300 font-medium py-2 rounded-lg text-xs tracking-wider transition-colors">
-                  🔒 Register Verified Audit Status on Stellar
-                </button>
-              </div>
-            )}
-          </section>
-
-        </div>
-      </div>
-    </main>
-  );
-}
+                <div className="flex-1 bg-slate-9
