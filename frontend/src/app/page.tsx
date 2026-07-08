@@ -160,4 +160,30 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="flex-1 bg-slate-9
+                <div className="flex-1 bg-slate-950 p-3 rounded-lg border border-slate-800 font-mono text-xs overflow-y-auto max-h-[220px] whitespace-pre-wrap text-slate-300 scrollbar-thin">
+                  {auditResult.report_markdown}
+                </div>
+
+                <button
+                  onClick={handleRegisterOnChain}
+                  disabled={txLoading}
+                  className="w-full border border-indigo-500/30 hover:border-indigo-400 bg-indigo-500/20 disabled:bg-slate-800/40 text-indigo-400 disabled:text-slate-500 font-semibold py-2.5 rounded-lg text-xs tracking-wider transition-all shadow-md flex items-center justify-center gap-2"
+                >
+                  {txLoading ? (
+                    <>
+                      <div className="h-3 w-3 rounded-full border-2 border-t-indigo-400 border-slate-600 animate-spin" />
+                      Awaiting Wallet Signature...
+                    </>
+                  ) : (
+                    '🔒 Register Verified Audit Status on Stellar'
+                  )}
+                </button>
+              </div>
+            )}
+          </section>
+
+        </div>
+      </div>
+    </main>
+  );
+}
